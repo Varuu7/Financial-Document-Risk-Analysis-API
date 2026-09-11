@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from pathlib import Path
 import json
 import requests
@@ -6,6 +8,38 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+
+# ------------------------------------------------------------------------------
+# Auto-start the FastAPI backend in a background thread.
+#
+# On platforms like Streamlit Community Cloud, only this file (streamlit_app.py)
+# is launched as the entrypoint - there is no separate process running
+# `python run.py`. To keep the app self-contained on a single free deployment,
+# we spin up the FastAPI backend (app.main:app) on 127.0.0.1:8000 in a daemon
+# thread the first time this script runs. Streamlit re-executes this module on
+# every user interaction, so a session-state flag guards against starting the
+# backend more than once per process.
+# ------------------------------------------------------------------------------
+def _start_backend_in_background():
+    import uvicorn
+
+    def _run():
+        uvicorn.run(
+            "app.main:app",
+            host="127.0.0.1",
+            port=8000,
+            log_level="warning",
+        )
+
+    thread = threading.Thread(target=_run, daemon=True, name="fastapi-backend")
+    thread.start()
+    time.sleep(2)  # brief pause so the server has a moment to bind before first health check
+
+
+if os.getenv("DISABLE_EMBEDDED_BACKEND", "").lower() not in ("1", "true", "yes"):
+    if "_backend_thread_started" not in st.session_state:
+        _start_backend_in_background()
+        st.session_state["_backend_thread_started"] = True
 
 # ------------------------------------------------------------------------------
 # Page Configuration
