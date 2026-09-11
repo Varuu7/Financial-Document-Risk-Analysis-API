@@ -1,6 +1,8 @@
 import os
+import socket
 import threading
 import time
+import traceback
 from pathlib import Path
 import json
 import requests
@@ -16,30 +18,89 @@ import plotly.graph_objects as go
 # is launched as the entrypoint - there is no separate process running
 # `python run.py`. To keep the app self-contained on a single free deployment,
 # we spin up the FastAPI backend (app.main:app) on 127.0.0.1:8000 in a daemon
-# thread the first time this script runs. Streamlit re-executes this module on
-# every user interaction, so a session-state flag guards against starting the
-# backend more than once per process.
+# thread the first time this Streamlit *process* boots.
+#
+# Two things matter here that a naive implementation gets wrong:
+#   1. Streamlit reruns this module on every user interaction, and every new
+#      browser tab/reload gets a fresh st.session_state - so a session_state
+#      guard alone would try to re-bind port 8000 on every new session and
+#      collide with the already-running server. We use a process-wide global
+#      (module-level, shared by every session in this worker) instead.
+#   2. Importing `app.main` pulls in torch/transformers, which is slow to
+#      import even before any model weights are downloaded. A fixed
+#      `time.sleep(2)` is not long enough. We poll the port instead of
+#      guessing, and surface any startup exception directly in the UI so a
+#      failure is visible without needing to dig through cloud logs.
 # ------------------------------------------------------------------------------
+_BACKEND_HOST = "127.0.0.1"
+_BACKEND_PORT = 8000
+_backend_lock = threading.Lock()
+
+
+def _port_is_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+@st.cache_resource
 def _start_backend_in_background():
-    import uvicorn
+    """Starts the FastAPI backend exactly once per Streamlit process."""
+    result = {"started": False, "error": None}
 
-    def _run():
-        uvicorn.run(
-            "app.main:app",
-            host="127.0.0.1",
-            port=8000,
-            log_level="warning",
-        )
+    with _backend_lock:
+        if _port_is_open(_BACKEND_HOST, _BACKEND_PORT):
+            # Something (an earlier rerun, or `python run.py` run manually) is
+            # already listening on this port - nothing to do.
+            result["started"] = True
+            return result
 
-    thread = threading.Thread(target=_run, daemon=True, name="fastapi-backend")
-    thread.start()
-    time.sleep(2)  # brief pause so the server has a moment to bind before first health check
+        def _run():
+            try:
+                import uvicorn
+
+                uvicorn.run(
+                    "app.main:app",
+                    host=_BACKEND_HOST,
+                    port=_BACKEND_PORT,
+                    log_level="warning",
+                )
+            except Exception:
+                result["error"] = traceback.format_exc()
+
+        thread = threading.Thread(target=_run, daemon=True, name="fastapi-backend")
+        thread.start()
+
+        # Poll for the port to open instead of guessing with a fixed sleep -
+        # torch/transformers imports can legitimately take 10-20+ seconds on
+        # a cold container.
+        deadline = time.time() + 45
+        while time.time() < deadline:
+            if _port_is_open(_BACKEND_HOST, _BACKEND_PORT):
+                result["started"] = True
+                break
+            if result["error"]:
+                break
+            time.sleep(0.5)
+
+    return result
 
 
 if os.getenv("DISABLE_EMBEDDED_BACKEND", "").lower() not in ("1", "true", "yes"):
-    if "_backend_thread_started" not in st.session_state:
-        _start_backend_in_background()
-        st.session_state["_backend_thread_started"] = True
+    _backend_startup = _start_backend_in_background()
+    if _backend_startup.get("error"):
+        st.error(
+            "🚨 The embedded FastAPI backend crashed on startup. "
+            "Full traceback below - this is usually a missing dependency or an import error."
+        )
+        st.code(_backend_startup["error"], language="text")
+    elif not _backend_startup.get("started"):
+        st.warning(
+            "⏳ The backend is taking longer than expected to start. "
+            "It may still come online in the next few seconds - try refreshing shortly."
+        )
 
 # ------------------------------------------------------------------------------
 # Page Configuration
