@@ -1,0 +1,11 @@
+Acme Global Holdings Inc. (NYSE: AGH) - Q3 Earnings Call Excerpt
+
+Chief Financial Officer Remarks:
+Good morning, everyone. During the third quarter, consolidated net revenue contracted by 6.8% to $1.24 billion. 
+Our gross operating margin compressed by 380 basis points, largely driven by unrelenting semiconductor supply chain disruptions, elevated ocean freight rates, and adverse foreign exchange volatility in our European operations.
+
+With respect to our balance sheet, our total outstanding debt obligations stand at $2.1 billion. Due to the recent benchmark interest rate hikes enacted by central banks, our variable-rate debt servicing costs surged by $24 million during the quarter. While our current cash and cash equivalents of $185 million provide short-term runway, our revolving credit facility matures in November 2026. If macroeconomic conditions deteriorate further, we face the risk of tightening debt covenant ratios under our existing senior secured credit agreements.
+
+On the operational and legal front, our cloud software subsidiary is currently subject to a formal antitrust inquiry by the European Commission, which could culminate in material regulatory fines and require modifications to our enterprise licensing agreements. We have accrued $35 million in contingent legal reserves, but ultimate liability remains uncertain.
+
+Despite these headwinds, customer retention in our core subscription business remained resilient at 94%, and we expanded gross bookings in the Asia-Pacific region by 11%.

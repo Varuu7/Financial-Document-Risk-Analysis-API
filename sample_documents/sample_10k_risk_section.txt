@@ -1,0 +1,10 @@
+ITEM 1A. RISK FACTORS - EXCERPTS FROM ANNUAL REPORT ON FORM 10-K
+
+Risks Related to Our Financial Condition and Liquidity:
+We have incurred substantial indebtedness, which could adversely affect our financial health and prevent us from fulfilling our obligations under our outstanding senior notes. As of December 31, 2025, we had approximately $3.4 billion in total debt. If our cash flow from operations is insufficient to service our indebtedness, we may be forced to reduce capital expenditures, sell assets, refinance debt on unfavorable terms, or breach financial maintenance covenants. Our credit agreement contains restrictive covenants that limit our operational flexibility, including restrictions on incurring additional debt, paying dividends, and engaging in mergers.
+
+Risks Related to Market Volatility and Macroeconomic Pressures:
+Our international sales represent over 45% of total revenues. Extreme fluctuations in currency exchange rates, particularly the Euro and Japanese Yen against the U.S. Dollar, could result in substantial foreign exchange transaction losses. Inflationary cost pressures on energy, warehousing, and skilled technical labor may continue to depress operating profitability unless we can successfully pass price increases to end customers.
+
+Risks Related to Cybersecurity, Technology and Operations:
+Our digital infrastructure and customer data repositories are subject to sophisticated cybersecurity threats, malware, and ransomware attacks. Any material breach of our information systems could disrupt mission-critical customer operations, damage enterprise reputation, result in severe customer attrition, and expose us to class-action data privacy litigation and statutory fines under GDPR and CCPA. Furthermore, single-source dependency on specialized Asian foundries creates severe vulnerability to regional geopolitical disruptions.
