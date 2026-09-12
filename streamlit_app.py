@@ -1,106 +1,28 @@
 import os
-import socket
-import threading
-import time
-import traceback
 from pathlib import Path
 import json
-import requests
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+from app import local_client as backend
 
 # ------------------------------------------------------------------------------
-# Auto-start the FastAPI backend in a background thread.
+# Backend access
 #
-# On platforms like Streamlit Community Cloud, only this file (streamlit_app.py)
-# is launched as the entrypoint - there is no separate process running
-# `python run.py`. To keep the app self-contained on a single free deployment,
-# we spin up the FastAPI backend (app.main:app) on 127.0.0.1:8000 in a daemon
-# thread the first time this Streamlit *process* boots.
+# Earlier versions of this app called out to a separate FastAPI server over
+# HTTP (http://127.0.0.1:8000). That requires a second process to be running
+# `python run.py` - fine when developing locally with two terminals, but
+# fragile on single-container deployments (Streamlit Community Cloud, etc.)
+# where only this script gets launched.
 #
-# Two things matter here that a naive implementation gets wrong:
-#   1. Streamlit reruns this module on every user interaction, and every new
-#      browser tab/reload gets a fresh st.session_state - so a session_state
-#      guard alone would try to re-bind port 8000 on every new session and
-#      collide with the already-running server. We use a process-wide global
-#      (module-level, shared by every session in this worker) instead.
-#   2. Importing `app.main` pulls in torch/transformers, which is slow to
-#      import even before any model weights are downloaded. A fixed
-#      `time.sleep(2)` is not long enough. We poll the port instead of
-#      guessing, and surface any startup exception directly in the UI so a
-#      failure is visible without needing to dig through cloud logs.
+# `app/local_client.py` exposes the same get()/post() call shape as the
+# `requests` library, but calls the FastAPI service layer directly in this
+# same process - no server, no port, nothing to be "unreachable." If you
+# still want to run the standalone FastAPI server (e.g. to hit it from
+# Postman or another client), `python run.py` continues to work unchanged;
+# this app just no longer depends on it.
 # ------------------------------------------------------------------------------
-_BACKEND_HOST = "127.0.0.1"
-_BACKEND_PORT = 8000
-_backend_lock = threading.Lock()
-
-
-def _port_is_open(host: str, port: int, timeout: float = 0.5) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-
-@st.cache_resource
-def _start_backend_in_background():
-    """Starts the FastAPI backend exactly once per Streamlit process."""
-    result = {"started": False, "error": None}
-
-    with _backend_lock:
-        if _port_is_open(_BACKEND_HOST, _BACKEND_PORT):
-            # Something (an earlier rerun, or `python run.py` run manually) is
-            # already listening on this port - nothing to do.
-            result["started"] = True
-            return result
-
-        def _run():
-            try:
-                import uvicorn
-
-                uvicorn.run(
-                    "app.main:app",
-                    host=_BACKEND_HOST,
-                    port=_BACKEND_PORT,
-                    log_level="warning",
-                )
-            except Exception:
-                result["error"] = traceback.format_exc()
-
-        thread = threading.Thread(target=_run, daemon=True, name="fastapi-backend")
-        thread.start()
-
-        # Poll for the port to open instead of guessing with a fixed sleep -
-        # torch/transformers imports can legitimately take 10-20+ seconds on
-        # a cold container.
-        deadline = time.time() + 45
-        while time.time() < deadline:
-            if _port_is_open(_BACKEND_HOST, _BACKEND_PORT):
-                result["started"] = True
-                break
-            if result["error"]:
-                break
-            time.sleep(0.5)
-
-    return result
-
-
-if os.getenv("DISABLE_EMBEDDED_BACKEND", "").lower() not in ("1", "true", "yes"):
-    _backend_startup = _start_backend_in_background()
-    if _backend_startup.get("error"):
-        st.error(
-            "🚨 The embedded FastAPI backend crashed on startup. "
-            "Full traceback below - this is usually a missing dependency or an import error."
-        )
-        st.code(_backend_startup["error"], language="text")
-    elif not _backend_startup.get("started"):
-        st.warning(
-            "⏳ The backend is taking longer than expected to start. "
-            "It may still come online in the next few seconds - try refreshing shortly."
-        )
 
 # ------------------------------------------------------------------------------
 # Page Configuration
@@ -194,7 +116,7 @@ SAMPLE_DIR = Path(__file__).resolve().parent / "sample_documents"
 @st.cache_data(ttl=5)
 def check_backend_health(api_url: str):
     try:
-        r = requests.get(f"{api_url}/api/v1/health", timeout=2)
+        r = backend.get(f"{api_url}/api/v1/health", timeout=2)
         if r.status_code == 200:
             return True, r.json()
     except Exception:
@@ -228,19 +150,19 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("🔌 Backend Status")
-    api_url = st.text_input("FastAPI Base URL", value=DEFAULT_API_URL)
+    api_url = DEFAULT_API_URL
     is_healthy, health_info = check_backend_health(api_url)
 
     if is_healthy:
-        st.success(f"● Connected ({health_info.get('device', 'cpu')})")
+        st.success(f"● Engines Ready ({health_info.get('device', 'cpu')})")
         with st.expander("Diagnostic Info"):
             st.write(f"**App:** {health_info.get('app_name')}")
             st.write(f"**FinBERT:** {health_info.get('finbert_status')}")
             st.write(f"**BERT Risk:** {health_info.get('bert_risk_status')}")
             st.write(f"**GenAI:** {health_info.get('genai_engine')}")
     else:
-        st.error("● Backend Offline (Check port 8000)")
-        st.info("Start backend via `python run.py`")
+        st.error("● Engines Not Ready")
+        st.info("Check the app logs for the underlying error.")
 
     st.markdown("---")
     st.subheader("📋 Document Metadata")
@@ -269,23 +191,11 @@ with st.sidebar:
     include_mitigation = st.checkbox("Generate Mitigation Roadmap", value=True)
 
     st.markdown("---")
-    st.subheader("📦 Export Project")
-    zip_path = Path(r"C:\Users\Varun\.gemini\antigravity\scratch\financial-risk-analysis-api.zip")
-    if zip_path.exists():
-        with open(zip_path, "rb") as f:
-            st.download_button(
-                label="⬇️ Download Project (.zip)",
-                data=f.read(),
-                file_name="financial-risk-analysis-api.zip",
-                mime="application/zip",
-                use_container_width=True
-            )
-
-    st.markdown("---")
     st.markdown(
-        f"[📖 Swagger UI Documentation]({api_url}/docs)  \n"
-        f"[📑 ReDoc Schema]({api_url}/redoc)  \n"
-        f"[⬇️ Direct ZIP Download]({api_url}/download)"
+        "**Standalone API Docs:** run `python run.py` locally to expose "
+        "Swagger UI at `/docs` and ReDoc at `/redoc` on port 8000. "
+        "This deployed app talks to the analysis engines directly and "
+        "doesn't need that server running."
     )
 
 # ------------------------------------------------------------------------------
@@ -325,7 +235,7 @@ with tab1:
         if not doc_input or len(doc_input.strip()) < 20:
             st.warning("⚠️ Please provide at least 20 characters of financial disclosure text.")
         elif not is_healthy:
-            st.error("🚨 Backend API is not reachable at " + api_url + ". Make sure `python run.py` is running.")
+            st.error("🚨 The analysis engines failed to initialize. Check the app logs for details.")
         else:
             with st.spinner("Analyzing document with FinBERT, BERT Risk Engine, and Generative AI..."):
                 payload = {
@@ -336,14 +246,14 @@ with tab1:
                     "include_mitigation": include_mitigation
                 }
                 try:
-                    res = requests.post(f"{api_url}/api/v1/analyze/text", json=payload, timeout=40)
+                    res = backend.post(f"{api_url}/api/v1/analyze/text", json=payload, timeout=40)
                     if res.status_code == 200:
                         st.session_state.last_analysis = res.json()
                         st.success("✅ Risk Analysis Complete!")
                     else:
                         st.error(f"Analysis failed ({res.status_code}): {res.text}")
                 except Exception as e:
-                    st.error(f"Connection error: {e}")
+                    st.error(f"Error running analysis: {e}")
 
     # Render Results If Available
     if st.session_state.last_analysis:
@@ -533,7 +443,7 @@ with tab2:
 
         if st.button("🚀 Analyze Uploaded Document", type="primary"):
             if not is_healthy:
-                st.error("Backend API is unreachable. Check port 8000.")
+                st.error("The analysis engines failed to initialize. Check the app logs for details.")
             else:
                 with st.spinner("Processing file through document extractor and risk pipelines..."):
                     files = {"file": (file_name, file_bytes, uploaded_file.type or "application/octet-stream")}
@@ -544,7 +454,7 @@ with tab2:
                         "include_mitigation": "true" if include_mitigation else "false"
                     }
                     try:
-                        res = requests.post(f"{api_url}/api/v1/analyze/file", files=files, data=form_data, timeout=60)
+                        res = backend.post(f"{api_url}/api/v1/analyze/file", files=files, data=form_data, timeout=60)
                         if res.status_code == 200:
                             st.session_state.last_analysis = res.json()
                             st.session_state.document_text = preview_text
@@ -552,7 +462,7 @@ with tab2:
                         else:
                             st.error(f"Analysis failed ({res.status_code}): {res.text}")
                     except Exception as e:
-                        st.error(f"Error communicating with backend: {e}")
+                        st.error(f"Error processing file: {e}")
 
 # ==============================================================================
 # TAB 3: Financial Risk Q&A Assistant
@@ -598,7 +508,7 @@ with tab3:
                     "question": question
                 }
                 try:
-                    res = requests.post(f"{api_url}/api/v1/generative/qa", json=payload, timeout=20)
+                    res = backend.post(f"{api_url}/api/v1/generative/qa", json=payload, timeout=20)
                     if res.status_code == 200:
                         ans_data = res.json()
                         st.markdown("#### 💡 Answer")
@@ -635,7 +545,7 @@ with tab4:
         )
         if st.button("Evaluate FinBERT", key="fb_test"):
             try:
-                r = requests.post(f"{api_url}/api/v1/finbert/sentiment", json={"text": finbert_test_text})
+                r = backend.post(f"{api_url}/api/v1/finbert/sentiment", json={"text": finbert_test_text})
                 if r.status_code == 200:
                     fb_res = r.json()
                     st.json(fb_res)
@@ -653,7 +563,7 @@ with tab4:
         )
         if st.button("Classify Risk Category", key="bert_test"):
             try:
-                r = requests.post(f"{api_url}/api/v1/bert/risk-categories", json={"text": bert_test_text})
+                r = backend.post(f"{api_url}/api/v1/bert/risk-categories", json={"text": bert_test_text})
                 if r.status_code == 200:
                     b_res = r.json()
                     st.json(b_res)
