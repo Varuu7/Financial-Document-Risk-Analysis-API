@@ -1,5 +1,7 @@
 # 📊 Financial Document Risk Analysis API
 
+**🔗 Live Demo:** [tdds022b-financialriskintelligence.streamlit.app](https://tdds022b-financialriskintelligence.streamlit.app/)
+
 An enterprise-grade REST API for automated **Financial Document Risk Analysis** powered by **FastAPI**, **FinBERT**, **BERT**, and **Generative AI**. 
 
 The backend automatically serves an interactive **Swagger UI** (`/docs`) and **ReDoc** (`/redoc`) documentation interface with built-in schema validation, interactive test runners, and sample payloads.
@@ -88,8 +90,9 @@ GEMINI_API_KEY=your_gemini_api_key_here
 ```bash
 python run.py
 ```
-- 🌐 **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- 📖 **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+Once running locally, these become available in your own browser (they are **not** live links — they only work while the server is running on your machine):
+- 🌐 **Swagger UI**: `http://localhost:8000/docs`
+- 📖 **ReDoc**: `http://localhost:8000/redoc`
 
 ### 3. Launch the Streamlit Frontend Dashboard
 In a new terminal:
@@ -100,7 +103,9 @@ Or with Streamlit directly:
 ```bash
 streamlit run streamlit_app.py
 ```
-- 📊 **Streamlit Web UI**: [http://localhost:8501](http://localhost:8501)
+Once running locally: 📊 **Streamlit Web UI**: `http://localhost:8501`
+
+> **Note:** Want to try it without setting anything up? Use the hosted version instead: **https://tdds022b-financialriskintelligence.streamlit.app/**
 
 ---
 
